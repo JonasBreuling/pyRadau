@@ -1,0 +1,15 @@
+pyradau13 - Python wrapper around the Hairer/Wanner implementation of RADAU13
+
+RADAU13 is an implicit 13th order adaptive Runge-Kutta implementation by Ernst
+Hairer and Gerhard Wanner. The Fortran code is available from Ernst Hairer's
+website (http://www.unige.ch/~hairer/software.html) and a detailled
+description is available in their book
+
+Hairer, Norsett and Wanner (1993): Solving Ordinary Differential Equations.
+Nonstiff Problems.  2nd edition. Springer Series in Comput. Math., vol. 8.
+
+This package does not use f2py, but instead calls the fortran function from a C
+extension. Dense output is available. Supplying a Jacobian function is
+not (yet).
+
+See LICENSE file for license information.

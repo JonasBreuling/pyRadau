@@ -1,0 +1,4 @@
+*.pyc
+build/
+pyradau13.egg-info/
+pyradau13.so
