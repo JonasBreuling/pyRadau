@@ -31,5 +31,11 @@ class TestIntegration(unittest.TestCase):
         for t, x in zip(_t, _x):
             self.assertAlmostEqual(x, np.cos(t))
 
+    def test_multiple_time_levels(self):
+        X = np.linspace(0.1, 1, 100)
+        y = radau13(lambda t, x: x, 1, X)
+        self.assertAlmostEqual(max(abs(np.exp(X) - y)), 0)
+
+
 if __name__ == '__main__':
     unittest.main()

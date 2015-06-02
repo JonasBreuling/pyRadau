@@ -28,7 +28,7 @@ ext_modules = [ Extension('pyradau13', sources = [ 'pyradau13.c', 'lib/radau.f',
 
 setup(
     name = 'pyradau13',
-    version = '0.1',
+    version = '0.2',
     author = 'Phillip Berndt',
     author_email = 'phillip.berndt@googlemail.com',
     license = 'GPL',

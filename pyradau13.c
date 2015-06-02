@@ -98,13 +98,21 @@ static void radau_dense_feedback(int *nr, double *xold, double *x, double *y, in
 
 static PyObject *radau13(PyObject *self, PyObject *args, PyObject *kwargs) {
 	// Parse arguments
-	static char *kwlist[] = {"rhs_fn", "y0", "t_final", "order", "max_steps", "dense_callback", "t0", "h0", "abstol", "reltol", "max_stepsize", NULL};
-	PyObject *rhs_fn, *y0, *dense_callback = NULL;
+	static char *kwlist[] = {"rhs_fn", "y0", "t", "order", "max_steps", "dense_callback", "t0", "h0", "abstol", "reltol", "max_stepsize", NULL};
+	PyObject *rhs_fn, *y0, *times, *dense_callback = NULL;
 	double t_final, t_0 = 0., h_0 = 1e-6, abstol = 1e-13, reltol = 1e-9, max_stepsize = 0.;
 	int order = 13.;
 	unsigned int max_steps = 10000;
 
-	if(!PyArg_ParseTupleAndKeywords(args, kwargs, "OOd|iIOddddd", kwlist, &rhs_fn, &y0, &t_final, &order, &max_steps, &dense_callback, &t_0, &h_0, &abstol, &reltol, &max_stepsize)) return NULL;
+	if(!PyArg_ParseTupleAndKeywords(args, kwargs, "OOO|iIOddddd", kwlist, &rhs_fn, &y0, &times, &order, &max_steps, &dense_callback, &t_0, &h_0, &abstol, &reltol, &max_stepsize)) return NULL;
+	if(dense_callback != NULL && !PyCallable_Check(dense_callback)) {
+		PyErr_SetString(PyExc_ValueError, "dense_callback, if set, must be callable");
+		return NULL;
+	}
+	if(order != 13 && order != 5 && order != 9) {
+		PyErr_SetString(PyExc_ValueError, "Only orders 13, 9 and 5 are implemented.");
+		return NULL;
+	}
 	PyArrayObject *y0_array = (PyArrayObject *)PyArray_FROM_OTF(y0, NPY_DOUBLE,  NPY_ARRAY_IN_ARRAY | NPY_ARRAY_C_CONTIGUOUS);
 	if(!y0_array) {
 		PyErr_SetString(PyExc_ValueError, "y0 must be convertible to a numpy array");
@@ -112,14 +120,13 @@ static PyObject *radau13(PyObject *self, PyObject *args, PyObject *kwargs) {
 	}
 	if(!PyCallable_Check(rhs_fn)) {
 		PyErr_SetString(PyExc_ValueError, "rhs_fn must be callable");
+		Py_DECREF(y0_array);
 		return NULL;
 	}
-	if(dense_callback != NULL && !PyCallable_Check(dense_callback)) {
-		PyErr_SetString(PyExc_ValueError, "dense_callback, if set, must be callable");
-		return NULL;
-	}
-	if(order != 13 && order != 5 && order != 9) {
-		PyErr_SetString(PyExc_ValueError, "Only orders 13, 9 and 5 are implemented.");
+	PyArrayObject *times_array = (PyArrayObject *)PyArray_FROM_OTF(times, NPY_DOUBLE,  NPY_ARRAY_IN_ARRAY | NPY_ARRAY_C_CONTIGUOUS);
+	if(!times_array) {
+		PyErr_SetString(PyExc_ValueError, "t must be convertible to a numpy array");
+		Py_DECREF(y0_array);
 		return NULL;
 	}
 
@@ -129,55 +136,75 @@ static PyObject *radau13(PyObject *self, PyObject *args, PyObject *kwargs) {
 	struct radau_options options = { dense_callback, rhs_fn, y_out };
 	int lwork  = n * (n + 7*n + 3*7 + 3) + 20;
 	int liwork = (2 + (7 - 1) / 2) * n + 20;
-	double *work = calloc(lwork, sizeof(double));
-	int *iwork = calloc(lwork, sizeof(int));
+	double *work = malloc(lwork * sizeof(double));
+	int *iwork = malloc(lwork * sizeof(int));
 	int no[] = { 0, 0, 0, 0 };
 	int nc[] = { n, n, n };
 	int bw[] = { 0, 0 };
 	int yes = 1;
-	int idid = 0;
+	int idid = 1;
 
-	iwork[0] = 1;                          // Use Hessenberg matrix form
-	iwork[1] = max_steps;                  // Increase maximum number of steps
-	iwork[12] = (order + 1) / 2;           // Start off with given order
-	work[2] = 0.01;                        // Recompute Jacobian less often (default 0.001)
-	work[6] = max_stepsize;                // Maximal step size
+	int time_levels = PyArray_SIZE(times_array);
+	int current_level;
 
-	// Call RADAU
-	radau_(
-		&nc[0],                            // Dimension
-		radau_rhs,                         // RHS function
-		&t_0,                              // Initial time
-		PyArray_DATA(y_out),               // Initial y array and output
-		&t_final,                          // Final integration time
-		&h_0,                              // Initial step size
-		&reltol,                           // Tolerances
-		&abstol,                           //
-		&no[0],                            // Whether rtol and atol are vector valued
-		NULL,                              // Jacobian function
-		&no[1],                            // Whether to use JAC (1) or finite differences
-		&nc[1],                            // Band-width of the jacobian. N for full.
-		&bw[0],                            // Upper band-width (0 is MLJAC == N)
-		NULL,                              // Mass matrix function
-		&no[2],                            // Whether to use the mass matrix function
-		&nc[2],                            // Band-width of the mass matrix
-		&bw[1],                            // Upper band-widh of the mass matrix
-		radau_dense_feedback,              // Dense output function
-		dense_callback ? &yes : &no[3],    // Wether to call the dense output function
-		&work[0],                          // Temporary array of size LWORK
-		&lwork,                            // N*(LJAC+LMAS+7*N+3*NSMAX+3)+20
-		&iwork[0],                         // Temporary array of size LIWORK
-		&liwork,                           // (2+(NSMAX-1)/2)*N+20
-		NULL,                              // User-supplied RHS arguments
-		(int*)&options,                    // See RPAR
-		&idid                              // Return value
-						                   // IDID= 1  COMPUTATION SUCCESSFUL,
-						                   // IDID= 2  COMPUT. SUCCESSFUL (INTERRUPTED BY SOLOUT)
-						                   // IDID=-1  INPUT IS NOT CONSISTENT,
-						                   // IDID=-2  LARGER NMAX IS NEEDED,
-						                   // IDID=-3  STEP SIZE BECOMES TOO SMALL,
-						                   // IDID=-4  MATRIX IS REPEATEDLY SINGULAR.
-	);
+	PyObject *list_retval = PyList_New(0);
+
+	for(current_level = 0; current_level < time_levels; current_level++) {
+		t_final = ((double *)PyArray_DATA(times_array))[current_level];
+
+		memset(iwork, 0, sizeof(int) * liwork);
+		memset(work, 0, sizeof(double) * lwork);
+		iwork[0] = 1;                          // Use Hessenberg matrix form
+		iwork[1] = max_steps;                  // Increase maximum number of steps
+		iwork[12] = (order + 1) / 2;           // Start off with given order
+		work[2] = 0.01;                        // Recompute Jacobian less often (default 0.001)
+		work[6] = max_stepsize;                // Maximal step size
+
+		// Call RADAU
+		if(t_final > t_0)
+		radau_(
+			&nc[0],                            // Dimension
+			radau_rhs,                         // RHS function
+			&t_0,                              // Initial time
+			PyArray_DATA(y_out),               // Initial y array and output
+			&t_final,                          // Final integration time
+			&h_0,                              // Initial step size
+			&reltol,                           // Tolerances
+			&abstol,                           //
+			&no[0],                            // Whether rtol and atol are vector valued
+			NULL,                              // Jacobian function
+			&no[1],                            // Whether to use JAC (1) or finite differences
+			&nc[1],                            // Band-width of the jacobian. N for full.
+			&bw[0],                            // Upper band-width (0 is MLJAC == N)
+			NULL,                              // Mass matrix function
+			&no[2],                            // Whether to use the mass matrix function
+			&nc[2],                            // Band-width of the mass matrix
+			&bw[1],                            // Upper band-widh of the mass matrix
+			radau_dense_feedback,              // Dense output function
+			dense_callback ? &yes : &no[3],    // Wether to call the dense output function
+			&work[0],                          // Temporary array of size LWORK
+			&lwork,                            // N*(LJAC+LMAS+7*N+3*NSMAX+3)+20
+			&iwork[0],                         // Temporary array of size LIWORK
+			&liwork,                           // (2+(NSMAX-1)/2)*N+20
+			NULL,                              // User-supplied RHS arguments
+			(int*)&options,                    // See RPAR
+			&idid                              // Return value
+											   // IDID= 1  COMPUTATION SUCCESSFUL,
+											   // IDID= 2  COMPUT. SUCCESSFUL (INTERRUPTED BY SOLOUT)
+											   // IDID=-1  INPUT IS NOT CONSISTENT,
+											   // IDID=-2  LARGER NMAX IS NEEDED,
+											   // IDID=-3  STEP SIZE BECOMES TOO SMALL,
+											   // IDID=-4  MATRIX IS REPEATEDLY SINGULAR.
+		);
+		t_0 = t_final;
+
+		if(idid != 1) break;
+		if(time_levels > 1) {
+			PyObject *cpy = PyArray_Copy(y_out);
+			if(!cpy) return NULL;
+			PyList_Append(list_retval, cpy);
+		}
+	}
 
 	free(work);
 	free(iwork);
@@ -187,17 +214,29 @@ static PyObject *radau13(PyObject *self, PyObject *args, PyObject *kwargs) {
 		char err[30];
 		sprintf(err, "radau failed with idid = %d", idid);
 		PyErr_SetString(PyExc_RuntimeError, err);
+		if(time_levels > 1) {
+			Py_DECREF(list_retval);
+		}
 		Py_DECREF(y_out);
 		return NULL;
 	}
 
-	return Py_BuildValue("O", y_out);
+	if(time_levels > 1) {
+		PyObject *np_retval = PyArray_FromAny(list_retval, NULL, 0, 0, 0, NULL);
+		Py_DECREF(list_retval);
+		Py_DECREF(y_out);
+		return np_retval;
+	}
+	else {
+		Py_DECREF(list_retval);
+		return y_out;
+	}
 }
 
 static PyMethodDef methods[] = {
 	{"radau13", (PyCFunction)radau13, METH_VARARGS | METH_KEYWORDS,
 		"radau13 - Solve ODE system using the radau13 integrator\n\n"
-		"Syntax: radau13(rhs_fn, y0, t_final, order=13, max_steps=10000,\n"
+		"Syntax: radau13(rhs_fn, y0, t, order=13, max_steps=10000,\n"
 		"                dense_callback=None, t0=0, h0=1e-6, abstol=1e-13,\n"
 		"                reltol=1e-9, max_stepsize=0)\n\n"
 		" Parameters:\n"
@@ -206,7 +245,8 @@ static PyMethodDef methods[] = {
 		"     y is the current state vector.\n"
 		"     it should return a vector df/dt.\n\n"
 		" - y0 must be the initial state vector.\n"
-		" - t_final must be the desired new time level\n"
+		" - t must be the desired new time level, or an increasing list\n",
+		"   of time levels.\n"
 		" - order must be one of 13, 9 or 5.\n"
 		" - max_steps denotes the maximal step count to take.\n"
 		" - dense_callback must be either not set, or a callable of the\n"
