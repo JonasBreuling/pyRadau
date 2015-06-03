@@ -8,7 +8,7 @@
 typedef void (*rhs_t)(int *n, double *x, double *y, double *f, float *rpar, int *ipar);
 typedef void (*jac_t)(int *n, double *x, double *y, double *dfy, int *ldfy, float *rpar, int *ipar);
 typedef void (*mas_t)(int *n, double *am, int *lmas, float *rpar, int *ipar);
-typedef void (*sol_t)(int *nr, double *xold, double *x, double *y, int *cont, int *lrc, int *n,
+typedef void (*sol_t)(int *nr, double *xold, double *x, double *y, double *cont, int *lrc, int *n,
 		float *rpar, int *ipar, int *irtrn);
 
 #ifdef __cplusplus
@@ -49,6 +49,13 @@ extern "C" {
 						 //  IDID=-3  STEP SIZE BECOMES TOO SMALL,
 						 //  IDID=-4  MATRIX IS REPEATEDLY SINGULAR.
 	);
+
+	double contra_(
+		int *I,          // Dimension
+		double *X,       // Time
+		double *CONT,    // Continous data
+		int *LRC         // Dimensionality of CONT
+	);
 #ifdef __cplusplus
 }
 #endif
@@ -58,6 +65,85 @@ struct radau_options {
 	PyObject *rhs_fn;
 	PyArrayObject *y_out;
 };
+
+typedef struct {
+    PyObject_HEAD
+
+	PyArrayObject *y;
+	double t0;
+	double t1;
+	double *cont;
+	int lrc;
+} RadauDenseEvaluator;
+
+static PyObject *RadauDenseEvaluator_call(RadauDenseEvaluator *self, PyObject *args, PyObject *kwargs) {
+	double time;
+	if(self->cont == NULL) {
+		PyErr_SetString(PyExc_RuntimeError, "This object is only valid in the dense callback function");
+		return NULL;
+	}
+	if(!PyArg_ParseTuple(args, "d", &time)) return NULL;
+	if(time < self->t0 || time > self->t1) {
+		char err[255];
+		sprintf(err, "Time must fulfil %e <= t <= %e", self->t0, self->t1);
+		PyErr_SetString(PyExc_ValueError, err);
+		return NULL;
+	}
+
+	PyArrayObject *retval = (PyArrayObject *)PyArray_SimpleNew(PyArray_NDIM(self->y), PyArray_DIMS(self->y), NPY_DOUBLE);
+	double *data = PyArray_DATA(retval);
+
+	int n;
+	for(n = 1; n<PyArray_SIZE(self->y)+1; n++) {
+		data[n-1] = contra_(&n, &time, self->cont, &(self->lrc));
+	}
+
+	return (PyObject *)retval;
+}
+
+static PyTypeObject RadauDenseEvaluatorType = {
+    PyObject_HEAD_INIT(NULL)
+    0,                                        /* ob_size*/
+    "RadauDenseEvaluator",                    /* tp_name*/
+    sizeof(RadauDenseEvaluator),              /* tp_basicsize*/
+    0,                                        /* tp_itemsize*/
+    0,                                        /* tp_dealloc*/
+    0,                                        /* tp_print*/
+    0,                                        /* tp_getattr*/
+    0,                                        /* tp_setattr*/
+    0,                                        /* tp_compare*/
+    0,                                        /* tp_repr*/
+    0,                                        /* tp_as_number*/
+    0,                                        /* tp_as_sequence*/
+    0,                                        /* tp_as_mapping*/
+    0,                                        /* tp_hash */
+    (ternaryfunc)RadauDenseEvaluator_call,    /* tp_call*/
+    0,                                        /* tp_str*/
+    0,                                        /* tp_getattro*/
+    0,                                        /* tp_setattro*/
+    0,                                        /* tp_as_buffer*/
+    Py_TPFLAGS_DEFAULT | Py_TPFLAGS_BASETYPE, /* tp_flags*/
+    "Dense evaluator",                        /* tp_doc */
+    0,                                        /* tp_traverse */
+    0,                                        /* tp_clear */
+    0,                                        /* tp_richcompare */
+    0,                                        /* tp_weaklistoffset */
+    0,                                        /* tp_iter */
+    0,                                        /* tp_iternext */
+    0,                                        /* tp_methods */
+    0,                                        /* tp_members */
+    0,                                        /* tp_getset */
+    0,                                        /* tp_base */
+    0,                                        /* tp_dict */
+    0,                                        /* tp_descr_get */
+    0,                                        /* tp_descr_set */
+    0,                                        /* tp_dictoffset */
+    0,                                        /* tp_init */
+    0,                                        /* tp_alloc */
+    0,                                        /* tp_new */
+};
+
+
 
 static void radau_rhs(int *n, double *x, double *y, double *f, float *rpar, int *ipar) {
 	struct radau_options *options = (struct radau_options *)ipar;
@@ -76,24 +162,34 @@ static void radau_rhs(int *n, double *x, double *y, double *f, float *rpar, int 
 	Py_DECREF(rhs_retval);
 }
 
-static void radau_dense_feedback(int *nr, double *xold, double *x, double *y, int *cont, int *lrc, int *n, float *rpar, int *ipar, int *irtrn) {
+static void radau_dense_feedback(int *nr, double *xold, double *x, double *y, double *cont, int *lrc, int *n, float *rpar, int *ipar, int *irtrn) {
 	struct radau_options *options = (struct radau_options *)ipar;
 
 	PyObject *y_current = PyArray_SimpleNewFromData(PyArray_NDIM(options->y_out), PyArray_DIMS(options->y_out), NPY_DOUBLE, y);
 	if(y_current == NULL) return;
 	PyObject *y_copy = (PyObject *)PyArray_Copy((PyArrayObject *)y_current);
 	if(y_copy == NULL) return;
-	PyObject *rhs_retval = PyObject_CallFunction(options->dense_callback, "dO", *x, y_copy);
+
+	RadauDenseEvaluator *evaluator = PyObject_NEW(RadauDenseEvaluator, &RadauDenseEvaluatorType);
+	evaluator->t1 = *x;
+	evaluator->t0 = *xold;
+	evaluator->lrc = *lrc;
+	evaluator->cont = cont;
+	evaluator->y = (PyArrayObject *)y_copy;
+
+	PyObject *rhs_retval = PyObject_CallFunction(options->dense_callback, "ddOO", *xold, *x, y_copy, evaluator);
 	Py_DECREF(y_copy);
 	Py_DECREF(y_current);
+	evaluator->cont = NULL;
+	Py_DECREF(evaluator);
 
-	if(PyObject_IsTrue(rhs_retval)) {
+	if(rhs_retval == NULL || PyObject_IsTrue(rhs_retval)) {
 		*irtrn = -1;
 	}
 	else {
 		*irtrn = 1;
 	}
-	Py_DECREF(rhs_retval);
+	if(rhs_retval) Py_DECREF(rhs_retval);
 }
 
 static PyObject *radau13(PyObject *self, PyObject *args, PyObject *kwargs) {
@@ -211,9 +307,11 @@ static PyObject *radau13(PyObject *self, PyObject *args, PyObject *kwargs) {
 	Py_DECREF(y0_array);
 
 	if(idid != 1 || y_out == NULL) {
-		char err[30];
-		sprintf(err, "radau failed with idid = %d", idid);
-		PyErr_SetString(PyExc_RuntimeError, err);
+		if(PyErr_Occurred() == NULL) {
+			char err[30];
+			sprintf(err, "radau failed with idid = %d", idid);
+			PyErr_SetString(PyExc_RuntimeError, err);
+		}
 		if(time_levels > 1) {
 			Py_DECREF(list_retval);
 		}
@@ -250,8 +348,9 @@ static PyMethodDef methods[] = {
 		" - order must be one of 13, 9 or 5.\n"
 		" - max_steps denotes the maximal step count to take.\n"
 		" - dense_callback must be either not set, or a callable of the\n"
-		"     type dense_callback(t, y). It is called after each internal\n"
-		"     integration step.\n"
+		"     type dense_callback(told, t, y, cont). It is called after each
+		"     internal integration step. cont is a callable that takes an argument\n"
+		"     from [told, t] and returns an approximation to the value at that time.\n"
 		"     If dense_callback returns a value that evaluates to True, integration\n"
 		"     is halted.\n"
 		" - t0 denotes the initial time.\n"
@@ -274,6 +373,10 @@ static PyMethodDef methods[] = {
 };
 
 PyMODINIT_FUNC initpyradau13(void) {
-   (void)Py_InitModule("pyradau13", methods);
-   import_array();
+	RadauDenseEvaluatorType.tp_new = PyType_GenericNew;
+	if(PyType_Ready(&RadauDenseEvaluatorType) < 0)
+		return;
+
+	(void)Py_InitModule("pyradau13", methods);
+	import_array();
 }

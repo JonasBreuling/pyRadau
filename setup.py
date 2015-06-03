@@ -16,7 +16,7 @@ Hairer, Norsett and Wanner (1993): Solving Ordinary Differential Equations.
 Nonstiff Problems.  2nd edition. Springer Series in Comput. Math., vol. 8.
 
 This package does not use f2py, but instead calls the fortran function from a C
-extension. Dense output is available. Supplying a Jacobian function is
+extension. Dense/continous output is available. Supplying a Jacobian function is
 not (yet).
 """
 

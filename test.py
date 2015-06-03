@@ -22,7 +22,7 @@ class TestIntegration(unittest.TestCase):
     def test_dense_feedback(self):
         _x = []
         _t = []
-        def _dense_cb(t, x):
+        def _dense_cb(told, t, x, cont):
             _x.append(x[0])
             _t.append(t)
         radau13(self._pendulum_rhs, [1, 0], 10, dense_callback=_dense_cb)
@@ -35,6 +35,12 @@ class TestIntegration(unittest.TestCase):
         X = np.linspace(0.1, 1, 100)
         y = radau13(lambda t, x: x, 1, X)
         self.assertAlmostEqual(max(abs(np.exp(X) - y)), 0)
+
+    def test_continous_output(self):
+        def _dense_cb(told, t, x, cont):
+            tavg = (told + t) / 2
+            self.assertAlmostEqual(cont(tavg), np.exp(tavg))
+        radau13(lambda t, x: x, 1, 1, dense_callback=_dense_cb)
 
 
 if __name__ == '__main__':
