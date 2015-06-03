@@ -163,7 +163,7 @@ static void radau_dense_feedback(int *nr, double *xold, double *x, double *y, do
 
 static PyObject *radau13(PyObject *self, PyObject *args, PyObject *kwargs) {
 	// Parse arguments
-	static char *kwlist[] = {"rhs_fn", "y0", "t", "order", "max_steps", "dense_callback", "t0", "h0", "abstol", "reltol", "max_stepsize", NULL};
+	static char *kwlist[] = {"rhs_fn", "y0", "t", "initial_order", "max_steps", "dense_callback", "t0", "h0", "abstol", "reltol", "max_stepsize", NULL};
 	PyObject *rhs_fn, *y0, *times, *dense_callback = NULL;
 	double t_final, t_0 = 0., h_0 = 1e-6, abstol = 1e-13, reltol = 1e-9, max_stepsize = 0.;
 	int order = 13.;
@@ -216,6 +216,11 @@ static PyObject *radau13(PyObject *self, PyObject *args, PyObject *kwargs) {
 
 	for(current_level = 0; current_level < time_levels; current_level++) {
 		t_final = ((double *)PyArray_DATA(times_array))[current_level];
+
+		if(t_final < t_0) {
+			PyErr_SetString(PyExc_ValueError, "Integration times must be increasing");
+			break;
+		}
 
 		memset(iwork, 0, sizeof(int) * liwork);
 		memset(work, 0, sizeof(double) * lwork);
@@ -288,6 +293,12 @@ static PyObject *radau13(PyObject *self, PyObject *args, PyObject *kwargs) {
 		return NULL;
 	}
 
+	if(PyErr_Occurred() != NULL) {
+		Py_DECREF(list_retval);
+		Py_DECREF(y_out);
+		return NULL;
+	}
+
 	if(time_levels > 1) {
 		PyObject *np_retval = PyArray_FromAny(list_retval, NULL, 0, 0, 0, NULL);
 		Py_DECREF(list_retval);
@@ -302,19 +313,20 @@ static PyObject *radau13(PyObject *self, PyObject *args, PyObject *kwargs) {
 
 static PyMethodDef methods[] = {
 	{"radau13", (PyCFunction)radau13, METH_VARARGS | METH_KEYWORDS,
-		"radau13 - Solve ODE system using the radau13 integrator\n\n"
-		"Syntax: radau13(rhs_fn, y0, t, order=13, max_steps=10000,\n"
+		"Solve an ODE system using the RADAU13 integrator\n\n"
+		"Syntax: radau13(rhs_fn, y0, t, initial_order=13, max_steps=10000,\n"
 		"                dense_callback=None, t0=0, h0=1e-6, abstol=1e-13,\n"
 		"                reltol=1e-9, max_stepsize=0)\n\n"
-		" Parameters:\n"
+		"Arguments:\n"
 		" - rhs_fn must be a callable of the type rhs_fn(t, y), where\n"
 		"     t is the current integration time, and\n"
 		"     y is the current state vector.\n"
-		"     it should return a vector df/dt.\n\n"
+		"     It should return a vector df/dt.\n"
 		" - y0 must be the initial state vector.\n"
 		" - t must be the desired new time level, or an increasing list\n"
-		"   of time levels.\n"
-		" - order must be one of 13, 9 or 5.\n"
+		"   of time levels.\n\n"
+		"Optional arguments:\n"
+		" - initial_order must be one of 13, 9 or 5.\n"
 		" - max_steps denotes the maximal step count to take.\n"
 		" - dense_callback must be either not set, or a callable of the\n"
 		"     type dense_callback(told, t, y, cont). It is called after each\n"
@@ -328,6 +340,7 @@ static PyMethodDef methods[] = {
 		" - max_stepsize denotes the maximal step size. It is only required\n"
 		"     if you need fixed times in dense_callback; for normal operation\n"
 		"     abstol/reltol are fine.\n\n"
+		"Return value:\n"
 		" The function returns the state at time t_final, or throws a\n"
 		" RuntimeError if it vails. The runtime error contains the error message\n"
 		" from RADAU13, which can be\n"
