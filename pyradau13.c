@@ -105,44 +105,11 @@ static PyObject *RadauDenseEvaluator_call(RadauDenseEvaluator *self, PyObject *a
 
 static PyTypeObject RadauDenseEvaluatorType = {
     PyObject_HEAD_INIT(NULL)
-    0,                                        /* ob_size*/
-    "RadauDenseEvaluator",                    /* tp_name*/
-    sizeof(RadauDenseEvaluator),              /* tp_basicsize*/
-    0,                                        /* tp_itemsize*/
-    0,                                        /* tp_dealloc*/
-    0,                                        /* tp_print*/
-    0,                                        /* tp_getattr*/
-    0,                                        /* tp_setattr*/
-    0,                                        /* tp_compare*/
-    0,                                        /* tp_repr*/
-    0,                                        /* tp_as_number*/
-    0,                                        /* tp_as_sequence*/
-    0,                                        /* tp_as_mapping*/
-    0,                                        /* tp_hash */
-    (ternaryfunc)RadauDenseEvaluator_call,    /* tp_call*/
-    0,                                        /* tp_str*/
-    0,                                        /* tp_getattro*/
-    0,                                        /* tp_setattro*/
-    0,                                        /* tp_as_buffer*/
-    Py_TPFLAGS_DEFAULT | Py_TPFLAGS_BASETYPE, /* tp_flags*/
-    "Dense evaluator",                        /* tp_doc */
-    0,                                        /* tp_traverse */
-    0,                                        /* tp_clear */
-    0,                                        /* tp_richcompare */
-    0,                                        /* tp_weaklistoffset */
-    0,                                        /* tp_iter */
-    0,                                        /* tp_iternext */
-    0,                                        /* tp_methods */
-    0,                                        /* tp_members */
-    0,                                        /* tp_getset */
-    0,                                        /* tp_base */
-    0,                                        /* tp_dict */
-    0,                                        /* tp_descr_get */
-    0,                                        /* tp_descr_set */
-    0,                                        /* tp_dictoffset */
-    0,                                        /* tp_init */
-    0,                                        /* tp_alloc */
-    0,                                        /* tp_new */
+    .tp_name = "pyradau13.RadauDenseEvaluator",
+    .tp_basicsize = sizeof(RadauDenseEvaluator),
+    .tp_call = (ternaryfunc)RadauDenseEvaluator_call,
+    .tp_flags = Py_TPFLAGS_DEFAULT | Py_TPFLAGS_BASETYPE,
+    .tp_doc = "Dense evaluator"
 };
 
 
@@ -374,11 +341,33 @@ static PyMethodDef methods[] = {
 	{NULL, NULL}
 };
 
+#if PY_MAJOR_VERSION >= 3
+static struct PyModuleDef moduledef = {
+        PyModuleDef_HEAD_INIT,
+        "pyradau13",
+        "Python wrapper around the RADAU13 integrator",
+        -1,
+        methods
+};
+
+PyObject * PyInit_pyradau13(void) {
+#else
 PyMODINIT_FUNC initpyradau13(void) {
+#endif
+
 	RadauDenseEvaluatorType.tp_new = PyType_GenericNew;
 	if(PyType_Ready(&RadauDenseEvaluatorType) < 0)
-		return;
+		return NULL;
 
+#if PY_MAJOR_VERSION >= 3
+	PyObject *module = PyModule_Create(&moduledef);
+#else
 	(void)Py_InitModule("pyradau13", methods);
+#endif
+
 	import_array();
+
+#if PY_MAJOR_VERSION >= 3
+	return module;
+#endif
 }
