@@ -60,6 +60,8 @@ extern "C" {
 }
 #endif
 
+static const char *idid_error_strings[] = { "COMPUT. SUCCESSFUL (INTERRUPTED BY SOLOUT)", NULL, NULL, "INPUT IS NOT CONSISTENT", "LARGER NMAX IS NEEDED", "STEP SIZE BECOMES TOO SMALL", "MATRIX IS REPEATEDLY SINGULAR" };
+
 struct radau_options {
 	PyObject *dense_callback;
 	PyObject *rhs_fn;
@@ -308,8 +310,8 @@ static PyObject *radau13(PyObject *self, PyObject *args, PyObject *kwargs) {
 
 	if(idid != 1 || y_out == NULL) {
 		if(PyErr_Occurred() == NULL) {
-			char err[30];
-			sprintf(err, "radau failed with idid = %d", idid);
+			char err[255];
+			sprintf(err, "radau failed with idid = %d (%s)", idid, idid_error_strings[2 - idid]);
 			PyErr_SetString(PyExc_RuntimeError, err);
 		}
 		if(time_levels > 1) {
@@ -327,7 +329,7 @@ static PyObject *radau13(PyObject *self, PyObject *args, PyObject *kwargs) {
 	}
 	else {
 		Py_DECREF(list_retval);
-		return y_out;
+		return (PyObject *)y_out;
 	}
 }
 
@@ -348,7 +350,7 @@ static PyMethodDef methods[] = {
 		" - order must be one of 13, 9 or 5.\n"
 		" - max_steps denotes the maximal step count to take.\n"
 		" - dense_callback must be either not set, or a callable of the\n"
-		"     type dense_callback(told, t, y, cont). It is called after each
+		"     type dense_callback(told, t, y, cont). It is called after each\n"
 		"     internal integration step. cont is a callable that takes an argument\n"
 		"     from [told, t] and returns an approximation to the value at that time.\n"
 		"     If dense_callback returns a value that evaluates to True, integration\n"
