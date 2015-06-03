@@ -345,7 +345,7 @@ static PyMethodDef methods[] = {
 		"     y is the current state vector.\n"
 		"     it should return a vector df/dt.\n\n"
 		" - y0 must be the initial state vector.\n"
-		" - t must be the desired new time level, or an increasing list\n",
+		" - t must be the desired new time level, or an increasing list\n"
 		"   of time levels.\n"
 		" - order must be one of 13, 9 or 5.\n"
 		" - max_steps denotes the maximal step count to take.\n"
