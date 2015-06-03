@@ -39,17 +39,18 @@ setup(
     ext_modules = ext_modules,
     setup_requires=["numpy"],
     install_requires=["numpy"],
-    classifiers=(
+    classifiers=[
         "Development Status :: 4 - Beta",
         "Intended Audience :: Science/Research",
         "Intended Audience :: Developers",
         "License :: OSI Approved",
         "Programming Language :: C",
         "Programming Language :: Python",
+        "Programming Language :: Python :: 3",
         "Topic :: Scientific/Engineering",
         "Operating System :: POSIX",
         "Operating System :: Unix",
-    ),
+    ],
     cmdclass = {
         "build_src": no_f2py_build_scr,
     },
