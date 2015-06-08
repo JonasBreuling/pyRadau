@@ -163,19 +163,54 @@ static void radau_dense_feedback(int *nr, double *xold, double *x, double *y, do
 
 static PyObject *radau13(PyObject *self, PyObject *args, PyObject *kwargs) {
 	// Parse arguments
-	static char *kwlist[] = {"rhs_fn", "y0", "t", "initial_order", "max_steps", "dense_callback", "t0", "h0", "abstol", "reltol", "max_stepsize", NULL};
-	PyObject *rhs_fn, *y0, *times, *dense_callback = NULL;
-	double t_final, t_0 = 0., h_0 = 1e-6, abstol = 1e-13, reltol = 1e-9, max_stepsize = 0.;
-	int order = 13.;
-	unsigned int max_steps = 10000;
+	static char *kwlist[] = {"rhs_fn", "y0", "t", "initial_order", "min_order", "max_order",
+		"max_steps", "dense_callback", "t0", "h0", "abstol", "reltol", "max_step_size",
+		"hessenberg_form", "newton_max_steps", "newton_start_zero", "dae_index_1_count",
+		"dae_index_2_count", "dae_index_3_count", "classical_step_size_control",
+		"step_size_safety_factor", "jacobian_recomputation_factor", "keep_step_size_lower_limit",
+		"keep_step_size_upper_limit", "step_size_change_lower_limit",
+		"step_size_change_upper_limit", "order_increase_if_contractivity_below",
+		"order_decrease_if_contractivity_above", "order_decrease_only_if_step_size_ratio_above",
+		"order_decrease_only_if_step_size_ratio_below",
+		NULL};
 
-	if(!PyArg_ParseTupleAndKeywords(args, kwargs, "OOO|iIOddddd", kwlist, &rhs_fn, &y0, &times, &order, &max_steps, &dense_callback, &t_0, &h_0, &abstol, &reltol, &max_stepsize)) return NULL;
+	PyObject *rhs_fn, *y0, *times, *dense_callback = NULL, *hessenberg_form = NULL,
+			 *newton_start_zero = NULL, *classical_step_size_control = NULL, *abstol = NULL,
+			 *reltol = NULL;
+	double t_final, t_0 = 0., h_0 = 1e-6, max_step_size = 0., step_size_safety_factor = 0.,
+		   jacobian_recomputation_factor = 0., keep_step_size_lower_limit = 0.,
+		   keep_step_size_upper_limit = 0., step_size_change_lower_limit = 0.,
+		   step_size_change_upper_limit = 0., order_increase_if_contractivity_below = 0.,
+		   order_decrease_if_contractivity_above = 0., order_decrease_only_if_step_size_ratio_above = 0.,
+		   order_decrease_only_if_step_size_ratio_below = 0.;
+	int order = 13., min_order = 0, max_order = 0;
+	unsigned int max_steps = 10000, newton_max_steps = 0, dae_index_1_count = 0, dae_index_2_count = 0,
+				 dae_index_3_count = 0;
+
+	if(!PyArg_ParseTupleAndKeywords(args, kwargs, "OOO|iiiIOddOOdOIOIIIOdddddddddd", kwlist,
+				&rhs_fn, &y0, &times, &order, &min_order, &max_order, &max_steps, &dense_callback,
+				&t_0, &h_0, &abstol, &reltol, &max_step_size, &hessenberg_form, &newton_max_steps,
+				&newton_start_zero, &dae_index_1_count, &dae_index_2_count, &dae_index_3_count,
+				&classical_step_size_control, &step_size_safety_factor,
+				&jacobian_recomputation_factor, &keep_step_size_lower_limit,
+				&keep_step_size_upper_limit, &step_size_change_lower_limit,
+				&step_size_change_upper_limit, &order_increase_if_contractivity_below,
+				&order_decrease_if_contractivity_above,
+				&order_decrease_only_if_step_size_ratio_above,
+				&order_decrease_only_if_step_size_ratio_below
+			)) return NULL;
+
 	if(dense_callback != NULL && !PyCallable_Check(dense_callback)) {
 		PyErr_SetString(PyExc_ValueError, "dense_callback, if set, must be callable");
 		return NULL;
 	}
 	if(order != 13 && order != 5 && order != 9) {
-		PyErr_SetString(PyExc_ValueError, "Only orders 13, 9 and 5 are implemented.");
+		PyErr_SetString(PyExc_ValueError, "For the first step, only orders 13, 9 and 5 are implemented.");
+		return NULL;
+	}
+	if((min_order != 0 && min_order != 1 && min_order != 5 && min_order != 9 && min_order != 13) ||
+		(max_order != 0 && max_order != 1 && max_order != 5 && max_order != 9 && max_order != 13)) {
+		PyErr_SetString(PyExc_ValueError, "Only orders 13, 9, 5 and 1 are implemented.");
 		return NULL;
 	}
 	PyArrayObject *y0_array = (PyArrayObject *)PyArray_FROM_OTF(y0, NPY_DOUBLE,  NPY_ARRAY_IN_ARRAY | NPY_ARRAY_C_CONTIGUOUS);
@@ -192,6 +227,25 @@ static PyObject *radau13(PyObject *self, PyObject *args, PyObject *kwargs) {
 	if(!times_array) {
 		PyErr_SetString(PyExc_ValueError, "t must be convertible to a numpy array");
 		Py_DECREF(y0_array);
+		return NULL;
+	}
+	PyArrayObject *reltol_array = reltol ? (PyArrayObject *)PyArray_FROM_OTF(reltol, NPY_DOUBLE, NPY_ARRAY_IN_ARRAY | NPY_ARRAY_C_CONTIGUOUS) : NULL;
+	if(!reltol_array) {
+		npy_intp dim = 1;
+		reltol_array = (PyArrayObject *)PyArray_SimpleNew(1, &dim, NPY_DOUBLE);
+		*((double *)PyArray_DATA(reltol_array)) = 1e-9;
+	}
+	PyArrayObject *abstol_array = abstol ? (PyArrayObject *)PyArray_FROM_OTF(abstol, NPY_DOUBLE, NPY_ARRAY_IN_ARRAY | NPY_ARRAY_C_CONTIGUOUS) : NULL;
+	if(!abstol_array) {
+		npy_intp dim = 1;
+		abstol_array = (PyArrayObject *)PyArray_SimpleNew(1, &dim, NPY_DOUBLE);
+		*((double *)PyArray_DATA(abstol_array)) = 1e-13;
+	}
+	if(PyArray_SIZE(abstol_array) != PyArray_SIZE(reltol_array) || (PyArray_SIZE(abstol_array) > 1 && PyArray_SIZE(abstol_array) != PyArray_SIZE(y0_array))) {
+		PyErr_SetString(PyExc_ValueError, "reltol/abstol must either both be scalar or both vectors of the same length as y0, and must both be set if either is.");
+		Py_DECREF(y0_array);
+		Py_DECREF(reltol_array);
+		Py_DECREF(abstol_array);
 		return NULL;
 	}
 
@@ -212,6 +266,31 @@ static PyObject *radau13(PyObject *self, PyObject *args, PyObject *kwargs) {
 	int time_levels = PyArray_SIZE(times_array);
 	int current_level;
 
+	memset(iwork, 0, sizeof(int) * liwork);
+	memset(work, 0, sizeof(double) * lwork);
+	iwork[0] = hessenberg_form && PyObject_IsTrue(hessenberg_form);
+	iwork[1] = max_steps;
+	iwork[2] = newton_max_steps;
+	iwork[3] = newton_start_zero && PyObject_IsTrue(newton_start_zero);
+	iwork[4] = dae_index_1_count;
+	iwork[5] = dae_index_2_count;
+	iwork[6] = dae_index_3_count;
+	iwork[7] = classical_step_size_control && PyObject_IsTrue(classical_step_size_control);
+	iwork[10] = (min_order + 1) / 2;
+	iwork[11] = (max_order + 1) / 2;
+	iwork[12] = (order + 1) / 2;
+	work[1] = step_size_safety_factor;
+	work[2] = jacobian_recomputation_factor;
+	work[4] = keep_step_size_lower_limit;
+	work[5] = keep_step_size_upper_limit;
+	work[6] = max_step_size;
+	work[7] = step_size_change_lower_limit;
+	work[8] = step_size_change_upper_limit;
+	work[9] = order_increase_if_contractivity_below;
+	work[10] = order_decrease_if_contractivity_above;
+	work[11] = order_decrease_only_if_step_size_ratio_below;
+	work[12] = order_decrease_only_if_step_size_ratio_above;
+
 	PyObject *list_retval = PyList_New(0);
 
 	for(current_level = 0; current_level < time_levels; current_level++) {
@@ -222,14 +301,6 @@ static PyObject *radau13(PyObject *self, PyObject *args, PyObject *kwargs) {
 			break;
 		}
 
-		memset(iwork, 0, sizeof(int) * liwork);
-		memset(work, 0, sizeof(double) * lwork);
-		iwork[0] = 1;                          // Use Hessenberg matrix form
-		iwork[1] = max_steps;                  // Increase maximum number of steps
-		iwork[12] = (order + 1) / 2;           // Start off with given order
-		work[2] = 0.01;                        // Recompute Jacobian less often (default 0.001)
-		work[6] = max_stepsize;                // Maximal step size
-
 		// Call RADAU
 		if(t_final > t_0)
 		radau_(
@@ -239,9 +310,9 @@ static PyObject *radau13(PyObject *self, PyObject *args, PyObject *kwargs) {
 			PyArray_DATA(y_out),               // Initial y array and output
 			&t_final,                          // Final integration time
 			&h_0,                              // Initial step size
-			&reltol,                           // Tolerances
-			&abstol,                           //
-			&no[0],                            // Whether rtol and atol are vector valued
+			PyArray_DATA(reltol_array),        // Tolerances
+			PyArray_DATA(abstol_array),        //
+			PyArray_SIZE(reltol_array) > 1 ? (&yes) : (&no[0]),  // Whether rtol and atol are vector valued
 			NULL,                              // Jacobian function
 			&no[1],                            // Whether to use JAC (1) or finite differences
 			&nc[1],                            // Band-width of the jacobian. N for full.
@@ -279,6 +350,8 @@ static PyObject *radau13(PyObject *self, PyObject *args, PyObject *kwargs) {
 	free(work);
 	free(iwork);
 	Py_DECREF(y0_array);
+	Py_DECREF(reltol_array);
+	Py_DECREF(abstol_array);
 
 	if(idid != 1 || y_out == NULL) {
 		if(PyErr_Occurred() == NULL) {
@@ -316,7 +389,7 @@ static PyMethodDef methods[] = {
 		"Solve an ODE system using the RADAU13 integrator\n\n"
 		"Syntax: radau13(rhs_fn, y0, t, initial_order=13, max_steps=10000,\n"
 		"                dense_callback=None, t0=0, h0=1e-6, abstol=1e-13,\n"
-		"                reltol=1e-9, max_stepsize=0)\n\n"
+		"                reltol=1e-9, max_step_size=0)\n\n"
 		"Arguments:\n"
 		" - rhs_fn must be a callable of the type rhs_fn(t, y), where\n"
 		"     t is the current integration time, and\n"
@@ -327,6 +400,8 @@ static PyMethodDef methods[] = {
 		"   of time levels.\n\n"
 		"Optional arguments:\n"
 		" - initial_order must be one of 13, 9 or 5.\n"
+		" - min_order must be one of 13, 9, 5 or 1\n"
+		" - max_order must be one of 13, 9, 5 or 1\n"
 		" - max_steps denotes the maximal step count to take.\n"
 		" - dense_callback must be either not set, or a callable of the\n"
 		"     type dense_callback(told, t, y, cont). It is called after each\n"
@@ -336,10 +411,21 @@ static PyMethodDef methods[] = {
 		"     is halted.\n"
 		" - t0 denotes the initial time.\n"
 		" - h0 denotes the initial step size.\n"
-		" - abstol/reltol denote the integrator tolerances\n"
-		" - max_stepsize denotes the maximal step size. It is only required\n"
+		" - abstol/reltol denote the integrator tolerances (scalar or vector)\n"
+		" - max_step_size denotes the maximal step size. It is only required\n"
 		"     if you need fixed times in dense_callback; for normal operation\n"
 		"     abstol/reltol are fine.\n\n"
+		"Further optional arguments for fine grained control, only needed\n"
+		"in complex situations; see RADAU.F documentation for details:\n"
+		" max_step_size hessenberg_form newton_max_steps newton_start_zero\n"
+		" dae_index_1_count dae_index_2_count dae_index_3_count\n"
+		" classical_step_size_control step_size_safety_factor\n"
+		" jacobian_recomputation_factor keep_step_size_lower_limit\n"
+		" keep_step_size_upper_limit step_size_change_lower_limit\n"
+		" step_size_change_upper_limit order_increase_if_contractivity_below\n"
+		" order_decrease_if_contractivity_above\n"
+		" order_decrease_only_if_step_size_ratio_above\n"
+		" order_decrease_only_if_step_size_ratio_below\n\n"
 		"Return value:\n"
 		" The function returns the state at time t_final, or throws a\n"
 		" RuntimeError if it vails. The runtime error contains the error message\n"
@@ -370,7 +456,11 @@ PyMODINIT_FUNC initpyradau13(void) {
 
 	RadauDenseEvaluatorType.tp_new = PyType_GenericNew;
 	if(PyType_Ready(&RadauDenseEvaluatorType) < 0)
+#if PY_MAJOR_VERSION >= 3
 		return NULL;
+#else
+		return;
+#endif
 
 #if PY_MAJOR_VERSION >= 3
 	PyObject *module = PyModule_Create(&moduledef);

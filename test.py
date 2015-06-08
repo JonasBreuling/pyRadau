@@ -42,6 +42,34 @@ class TestIntegration(unittest.TestCase):
             self.assertAlmostEqual(cont(tavg), np.exp(tavg))
         radau13(lambda t, x: x, 1, 1, dense_callback=_dense_cb)
 
+    def test_memory_usage(self):
+        try:
+            import resource
+            import gc
+        except ImportError:
+            return
+
+        def _test():
+            state = np.ones(100)
+            radau13(lambda t, x: x, state, 10)
+        _test()
+        usage_before = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
+        for j in range(100):
+            gc.collect()
+            _test()
+        usage_after = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
+        self.assertGreater(usage_before, usage_after - 100)
+
+    def test_extra_args(self):
+        optional_args = [ x for x in radau13.__doc__.split("\n\n") if
+                         x.startswith("Further optional")][0].split(":")[1].split()
+        for arg in optional_args:
+            try:
+                radau13(lambda t, x: x, 1, 1, **{arg: 0})
+            except Exception as e:
+                raise RuntimeError("Passing %s failed: %s" % (arg, e))
+        radau13(lambda t, x: x, 1, 1, **{x: 0 for x in optional_args})
+
 
 if __name__ == '__main__':
     unittest.main()
