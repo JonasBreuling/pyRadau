@@ -79,6 +79,17 @@ class TestIntegration(unittest.TestCase):
         self.assertAlmostEqual(np.linalg.norm(radau13(_jac_test_rhs, [1, 0], 10) -
             radau13(_jac_test_rhs, [1, 0], 10, jacobian_fn=_jac_test_jac)), 0)
 
+    def test_mass_matrix(self):
+        """ Test problem:
+
+          d x_1 / dt = x_2
+                   0 = x_1 - x_2 / 2
+        """
+        mass_matrix = np.array([ [ 1, 0 ], [ 0, 0 ] ])
+        rhs = lambda t, x: [ x[1], x[0] - x[1] / 2 ]
+        retval = radau13(rhs, [ 1, 2 ], 10, mass_matrix=mass_matrix)[0]
+        self.assertAlmostEqual(retval, np.exp(2 * 10), 2)
+
 
 if __name__ == '__main__':
     unittest.main()

@@ -66,6 +66,7 @@ struct radau_options {
 	PyObject *dense_callback;
 	PyObject *rhs_fn;
 	PyObject *jacobian;
+	PyArrayObject *mass_matrix;
 	PyArrayObject *y_out;
 };
 
@@ -161,6 +162,15 @@ static void radau_jacobian(int *n, double *x, double *y, double *dfy, int *ldfy,
 	Py_DECREF(jacobian_retval);
 }
 
+static void radau_mass_matrix(int *n, double *am, int *lmas, float *rpar, int *ipar) {
+	struct radau_options *options = (struct radau_options *)ipar;
+
+	int use_n = PyArray_SIZE(options->mass_matrix);
+	if(use_n >= *n * *lmas) use_n = *n * *lmas;
+	memcpy(am, (double *)PyArray_DATA(options->mass_matrix), use_n * sizeof(double));
+}
+
+
 static void radau_dense_feedback(int *nr, double *xold, double *x, double *y, double *cont, int *lrc, int *n, float *rpar, int *ipar, int *irtrn) {
 	struct radau_options *options = (struct radau_options *)ipar;
 
@@ -194,8 +204,8 @@ static void radau_dense_feedback(int *nr, double *xold, double *x, double *y, do
 static PyObject *radau13(PyObject *self, PyObject *args, PyObject *kwargs) {
 	// Parse arguments
 	static char *kwlist[] = {"rhs_fn", "y0", "t", "initial_order", "min_order", "max_order",
-		"max_steps", "dense_callback", "t0", "h0", "abstol", "reltol", "jacobian_fn", "max_step_size",
-		"hessenberg_form", "newton_max_steps", "newton_start_zero", "dae_index_1_count",
+		"max_steps", "dense_callback", "t0", "h0", "abstol", "reltol", "jacobian_fn", "mass_matrix",
+		"max_step_size", "hessenberg_form", "newton_max_steps", "newton_start_zero", "dae_index_1_count",
 		"dae_index_2_count", "dae_index_3_count", "classical_step_size_control",
 		"step_size_safety_factor", "jacobian_recomputation_factor", "keep_step_size_lower_limit",
 		"keep_step_size_upper_limit", "step_size_change_lower_limit",
@@ -206,7 +216,7 @@ static PyObject *radau13(PyObject *self, PyObject *args, PyObject *kwargs) {
 
 	PyObject *rhs_fn, *y0, *times, *dense_callback = NULL, *hessenberg_form = NULL,
 			 *newton_start_zero = NULL, *classical_step_size_control = NULL, *abstol = NULL,
-			 *reltol = NULL, *jacobian_fn = NULL;
+			 *reltol = NULL, *jacobian_fn = NULL, *mass_matrix = NULL;
 	double t_final, t_0 = 0., h_0 = 1e-6, max_step_size = 0., step_size_safety_factor = 0.,
 		   jacobian_recomputation_factor = 0., keep_step_size_lower_limit = 0.,
 		   keep_step_size_upper_limit = 0., step_size_change_lower_limit = 0.,
@@ -217,10 +227,10 @@ static PyObject *radau13(PyObject *self, PyObject *args, PyObject *kwargs) {
 	unsigned int max_steps = 10000, newton_max_steps = 0, dae_index_1_count = 0, dae_index_2_count = 0,
 				 dae_index_3_count = 0;
 
-	if(!PyArg_ParseTupleAndKeywords(args, kwargs, "OOO|iiiIOddOOOdOIOIIIOdddddddddd", kwlist,
+	if(!PyArg_ParseTupleAndKeywords(args, kwargs, "OOO|iiiIOddOOOOdOIOIIIOdddddddddd", kwlist,
 				&rhs_fn, &y0, &times, &order, &min_order, &max_order, &max_steps, &dense_callback,
-				&t_0, &h_0, &abstol, &reltol, &jacobian_fn, &max_step_size, &hessenberg_form, &newton_max_steps,
-				&newton_start_zero, &dae_index_1_count, &dae_index_2_count, &dae_index_3_count,
+				&t_0, &h_0, &abstol, &reltol, &jacobian_fn, &mass_matrix, &max_step_size, &hessenberg_form,
+				&newton_max_steps, &newton_start_zero, &dae_index_1_count, &dae_index_2_count, &dae_index_3_count,
 				&classical_step_size_control, &step_size_safety_factor,
 				&jacobian_recomputation_factor, &keep_step_size_lower_limit,
 				&keep_step_size_upper_limit, &step_size_change_lower_limit,
@@ -262,6 +272,13 @@ static PyObject *radau13(PyObject *self, PyObject *args, PyObject *kwargs) {
 		Py_DECREF(y0_array);
 		return NULL;
 	}
+	PyArrayObject *mass_matrix_array = mass_matrix ? (PyArrayObject *)PyArray_FROM_OTF(mass_matrix, NPY_DOUBLE,  NPY_ARRAY_IN_ARRAY | NPY_ARRAY_F_CONTIGUOUS) : NULL;
+	if(mass_matrix && !mass_matrix_array) {
+		PyErr_SetString(PyExc_ValueError, "The mass matrix must be convertible to a numpy array");
+		Py_DECREF(y0_array);
+		Py_DECREF(times_array);
+		return NULL;
+	}
 	PyArrayObject *reltol_array = reltol ? (PyArrayObject *)PyArray_FROM_OTF(reltol, NPY_DOUBLE, NPY_ARRAY_IN_ARRAY | NPY_ARRAY_C_CONTIGUOUS) : NULL;
 	if(!reltol_array) {
 		npy_intp dim = 1;
@@ -279,14 +296,15 @@ static PyObject *radau13(PyObject *self, PyObject *args, PyObject *kwargs) {
 		Py_DECREF(y0_array);
 		Py_DECREF(reltol_array);
 		Py_DECREF(abstol_array);
+		if(mass_matrix_array) Py_DECREF(mass_matrix_array);
 		return NULL;
 	}
 
 	// Prepare memory for RADAU
 	int n = PyArray_SIZE(y0_array);
 	PyArrayObject *y_out = (PyArrayObject *)PyArray_Copy(y0_array); // PyArray_FromArray(y0_array, PyArray_DESCR(y0_array), NPY_ARRAY_WRITEABLE | NPY_ARRAY_ENSURECOPY);
-	struct radau_options options = { dense_callback, rhs_fn, jacobian_fn, y_out };
-	int lwork  = n * (n + 7*n + 3*7 + 3) + 20;
+	struct radau_options options = { dense_callback, rhs_fn, jacobian_fn, mass_matrix_array, y_out };
+	int lwork  = n * ((mass_matrix ? n : 0) + n + 7*n + 3*7 + 3) + 20;
 	int liwork = (2 + (7 - 1) / 2) * n + 20;
 	double *work = malloc(lwork * sizeof(double));
 	int *iwork = malloc(lwork * sizeof(int));
@@ -350,8 +368,8 @@ static PyObject *radau13(PyObject *self, PyObject *args, PyObject *kwargs) {
 			jacobian_fn ? &yes : &no[1],       // Whether to use JAC (1) or finite differences
 			&nc[1],                            // Band-width of the jacobian. N for full.
 			&bw[0],                            // Upper band-width (0 is MLJAC == N)
-			NULL,                              // Mass matrix function
-			&no[2],                            // Whether to use the mass matrix function
+			radau_mass_matrix,                 // Mass matrix function
+			mass_matrix ? &yes : &no[1],       // Whether to use the mass matrix function
 			&nc[2],                            // Band-width of the mass matrix
 			&bw[1],                            // Upper band-widh of the mass matrix
 			radau_dense_feedback,              // Dense output function
@@ -385,6 +403,7 @@ static PyObject *radau13(PyObject *self, PyObject *args, PyObject *kwargs) {
 	Py_DECREF(y0_array);
 	Py_DECREF(reltol_array);
 	Py_DECREF(abstol_array);
+	if(mass_matrix_array) Py_DECREF(mass_matrix_array);
 
 	if(idid != 1 || y_out == NULL) {
 		if(PyErr_Occurred() == NULL) {
@@ -448,7 +467,9 @@ static PyMethodDef methods[] = {
 		" - jacobian_fn must be a callable of the type jabocian_fn(t, y), where\n"
 		"     t is the current integration time, and\n"
 		"     y is the current state vector.\n"
-		"     It should return a (compressed, in the banded case) matrix.\n"
+		"     It should return a matrix.\n"
+		" - mass_matrix must be the mass matrix for implicit problems,\n"
+		"     M \\dot x = f(t, x).\n"
 		" - max_step_size denotes the maximal step size. It is only required\n"
 		"     if you need fixed times in dense_callback; for normal operation\n"
 		"     abstol/reltol are fine.\n\n"
