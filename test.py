@@ -70,6 +70,15 @@ class TestIntegration(unittest.TestCase):
                 raise RuntimeError("Passing %s failed: %s" % (arg, e))
         radau13(lambda t, x: x, 1, 1, **{x: 0 for x in optional_args})
 
+    def test_jacobian(self):
+        def _jac_test_rhs(t, x):
+            return x
+        def _jac_test_jac(t, x):
+            return 1
+
+        self.assertAlmostEqual(np.linalg.norm(radau13(_jac_test_rhs, [1, 0], 10) -
+            radau13(_jac_test_rhs, [1, 0], 10, jacobian_fn=_jac_test_jac)), 0)
+
 
 if __name__ == '__main__':
     unittest.main()
