@@ -41,13 +41,14 @@ extern "C" {
 		int    *LIWORK,  // (2+(NSMAX-1)/2)*N+20
 		float  *RPAR,    // User-supplied RHS arguments
 		int    *IPAR,    // See RPAR
-		int    *IDID     // Return value
+		int    *IDID,    // Return value
 						 //  IDID= 1  COMPUTATION SUCCESSFUL,
 						 //  IDID= 2  COMPUT. SUCCESSFUL (INTERRUPTED BY SOLOUT)
 						 //  IDID=-1  INPUT IS NOT CONSISTENT,
 						 //  IDID=-2  LARGER NMAX IS NEEDED,
 						 //  IDID=-3  STEP SIZE BECOMES TOO SMALL,
 						 //  IDID=-4  MATRIX IS REPEATEDLY SINGULAR.
+		char *ERRBUF     // Buffer to hold error messages, at least 1024 bytes
 	);
 
 	double contra_(
@@ -344,6 +345,9 @@ static PyObject *radau13(PyObject *self, PyObject *args, PyObject *kwargs) {
 
 	PyObject *list_retval = PyList_New(0);
 
+	char errbuf[1024];
+	memset(errbuf, 0, sizeof(errbuf));
+
 	for(current_level = 0; current_level < time_levels; current_level++) {
 		t_final = ((double *)PyArray_DATA(times_array))[current_level];
 
@@ -380,13 +384,14 @@ static PyObject *radau13(PyObject *self, PyObject *args, PyObject *kwargs) {
 			&liwork,                           // (2+(NSMAX-1)/2)*N+20
 			NULL,                              // User-supplied RHS arguments
 			(int*)&options,                    // See RPAR
-			&idid                              // Return value
+			&idid,                             // Return value
 											   // IDID= 1  COMPUTATION SUCCESSFUL,
 											   // IDID= 2  COMPUT. SUCCESSFUL (INTERRUPTED BY SOLOUT)
 											   // IDID=-1  INPUT IS NOT CONSISTENT,
 											   // IDID=-2  LARGER NMAX IS NEEDED,
 											   // IDID=-3  STEP SIZE BECOMES TOO SMALL,
 											   // IDID=-4  MATRIX IS REPEATEDLY SINGULAR.
+			errbuf
 		);
 		t_0 = t_final;
 
@@ -407,8 +412,12 @@ static PyObject *radau13(PyObject *self, PyObject *args, PyObject *kwargs) {
 
 	if(idid != 1 || y_out == NULL) {
 		if(PyErr_Occurred() == NULL) {
-			char err[255];
-			sprintf(err, "radau failed with idid = %d (%s)", idid, idid_error_strings[2 - idid]);
+			int i;
+			for(i=sizeof(errbuf)-1; i>0 && (errbuf[i] == ' ' || errbuf[i] == '\n' || errbuf[i] == 0 || errbuf[i] == '\t'); i--) {
+				errbuf[i] = 0;
+			}
+			char err[1024];
+			snprintf(err, sizeof(err), "radau failed with idid = %d (%s)%s%s", idid, idid_error_strings[2 - idid], errbuf ? "\n" : "", errbuf);
 			PyErr_SetString(PyExc_RuntimeError, err);
 		}
 		if(time_levels > 1) {

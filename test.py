@@ -90,6 +90,11 @@ class TestIntegration(unittest.TestCase):
         retval = radau13(rhs, [ 1, 2 ], 10, mass_matrix=mass_matrix)[0]
         self.assertAlmostEqual(retval, np.exp(2 * 10), 2)
 
+    def test_failure(self):
+        "This problem *is* unsolvable"
+        with self.assertRaises(RuntimeError):
+            radau13(lambda t, x: x**2, 1, 1)
+
 
 if __name__ == '__main__':
     unittest.main()
