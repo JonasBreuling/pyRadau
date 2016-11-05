@@ -9,6 +9,18 @@ class TestIntegration(unittest.TestCase):
     def _pendulum_rhs(self, t, x):
         return [ x[1], -x[0] ]
 
+    def test_exception_from_callback(self):
+        class _TestException(Exception):
+            pass
+        def _rhs(t, x):
+            raise _TestException()
+        def _dense_cb(told, t, x, cont):
+            raise _TestException()
+
+        self.assertRaises(_TestException, lambda: radau13(_rhs, 0, 1))
+        self.assertRaises(_TestException,
+                          lambda: radau13(lambda t, x: 1, 0, 1, dense_callback=_dense_cb))
+
     def test_exp(self):
         self.assertAlmostEqual(float(radau13(lambda t, x: x, 1, 1)), np.exp(1))
 

@@ -125,12 +125,16 @@ static void radau_rhs(int *n, double *x, double *y, double *f, float *rpar, int 
 	Py_DECREF(y_current);
 
 	if(rhs_retval == NULL) {
-		PyErr_SetString(PyExc_RuntimeError, "The RHS function must return a value");
+		if(PyErr_Occurred() == NULL) {
+			PyErr_SetString(PyExc_RuntimeError, "The RHS function must return a value");
+		}
 		return;
 	}
 	PyArrayObject *rv_array = (PyArrayObject *)PyArray_FROM_OTF(rhs_retval, NPY_DOUBLE, NPY_ARRAY_IN_ARRAY);
 	if(rv_array == NULL) {
-		PyErr_SetString(PyExc_RuntimeError, "The RHS function must return a vector");
+		if(PyErr_Occurred() == NULL) {
+			PyErr_SetString(PyExc_RuntimeError, "The RHS function must return a vector");
+		}
 		return;
 	}
 	int use_n = PyArray_SIZE(rv_array);
@@ -148,12 +152,16 @@ static void radau_jacobian(int *n, double *x, double *y, double *dfy, int *ldfy,
 	Py_DECREF(y_current);
 
 	if(jacobian_retval == NULL) {
-		PyErr_SetString(PyExc_RuntimeError, "The jacobian function must return a value");
+		if(PyErr_Occurred() == NULL) {
+			PyErr_SetString(PyExc_RuntimeError, "The jacobian function must return a value");
+		}
 		return;
 	}
 	PyArrayObject *rv_array = (PyArrayObject *)PyArray_FROM_OTF(jacobian_retval, NPY_DOUBLE, NPY_ARRAY_IN_ARRAY | NPY_ARRAY_F_CONTIGUOUS);
 	if(rv_array == NULL) {
-		PyErr_SetString(PyExc_RuntimeError, "The jacobian function must return a matrix");
+		if(PyErr_Occurred() == NULL) {
+			PyErr_SetString(PyExc_RuntimeError, "The jacobian function must return a matrix");
+		}
 		return;
 	}
 	int use_n = PyArray_SIZE(rv_array);
@@ -193,7 +201,12 @@ static void radau_dense_feedback(int *nr, double *xold, double *x, double *y, do
 	evaluator->cont = NULL;
 	Py_DECREF(evaluator);
 
-	if(rhs_retval == NULL || PyObject_IsTrue(rhs_retval)) {
+
+	if(PyErr_Occurred() != NULL) {
+		// Must abort: An error occured
+		*irtrn = 1;
+	}
+	else if(rhs_retval == NULL || PyObject_IsTrue(rhs_retval)) {
 		*irtrn = -1;
 	}
 	else {
