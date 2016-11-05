@@ -21,6 +21,18 @@ class TestIntegration(unittest.TestCase):
         self.assertRaises(_TestException,
                           lambda: radau13(lambda t, x: 1, 0, 1, dense_callback=_dense_cb))
 
+    def test_intentional_abort(self):
+        """radau13 should not raise if dense callback returns True, but it should
+        if an exception occurs there."""
+        def _rhs(t, x):
+            return 1
+        def _dense_cb(told, t, x, cont):
+            return True
+        def _dense_cb_err(told, t, x, cont):
+            return 1/0
+        self.assertEqual(radau13(_rhs, 0, 1, dense_callback=_dense_cb), 0)
+        self.assertRaises(ZeroDivisionError, lambda: radau13(_rhs, 0, 1, dense_callback=_dense_cb_err))
+
     def test_exp(self):
         self.assertAlmostEqual(float(radau13(lambda t, x: x, 1, 1)), np.exp(1))
 

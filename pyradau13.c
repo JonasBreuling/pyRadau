@@ -423,7 +423,7 @@ static PyObject *radau13(PyObject *self, PyObject *args, PyObject *kwargs) {
 	Py_DECREF(abstol_array);
 	if(mass_matrix_array) Py_DECREF(mass_matrix_array);
 
-	if(idid != 1 || y_out == NULL) {
+	if((idid != 1 && (idid != 2 || PyErr_Occurred() != NULL)) || y_out == NULL) {
 		if(PyErr_Occurred() == NULL) {
 			int i;
 			for(i=sizeof(errbuf)-1; i>0 && (errbuf[i] == ' ' || errbuf[i] == '\n' || errbuf[i] == 0 || errbuf[i] == '\t'); i--) {
