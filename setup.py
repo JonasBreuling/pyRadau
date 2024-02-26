@@ -32,16 +32,16 @@ class no_f2py_build_scr(build_src.build_src):
     def f2py_sources(self, sources, extension):
         return sources
 
-ext_modules = [ Extension('pyradau13', sources = [ 'pyradau13.c', 'lib/radau.f', 'lib/decsol.f', 'lib/dc_decsol.f' ]) ]
+ext_modules = [ Extension('pyRadau', sources = [ 'pyRadau.c', 'lib/radau.f', 'lib/decsol.f', 'lib/dc_decsol.f' ]) ]
 
 setup(
-    name = 'pyradau13',
+    name = 'pyRadau',
     version = '0.5',
     author = 'Phillip Berndt',
-    author_email = 'phillip.berndt@googlemail.com',
+    author_email = 'jonas.breuling@inm.uni-stuttgart.de',
     license = 'GPL',
-    url = 'https://git.imp.fu-berlin.de/pberndt/pyradau13',
-    description = 'Python wrapper around the Hairer/Wanner implementation of the RADAU13 ODE solver',
+    url = 'https://github.com/JonasBreuling/pyRadau',
+    description = 'Python wrapper around the Hairer/Wanner implementation of the RADAU ODE/ DAE solver',
     long_description = LONG_DESCRIPTION,
     include_dirs = [np.get_include()],
     ext_modules = ext_modules,
