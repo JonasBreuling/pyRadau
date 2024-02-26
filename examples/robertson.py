@@ -55,8 +55,10 @@ if __name__ == "__main__":
     num = 100
     t = np.logspace(-5, 7, num=num)
     max_steps = int(1e6)
-    min_order = 5
-    max_order = 13
+    # min_order = 5
+    # max_order = 13
+    min_order = 17
+    max_order = 17
     reltol = 1e-14
     abstol = 1e-14
 
@@ -87,7 +89,7 @@ if __name__ == "__main__":
 
     print(f"y.shape: {y.shape}")
 
-    # exit()
+    exit()
 
     # t = np.array(sol_t)
     h = np.array(sol_h)

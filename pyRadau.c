@@ -237,7 +237,7 @@ static PyObject *radau(PyObject *self, PyObject *args, PyObject *kwargs) {
 		   step_size_change_upper_limit = 0., order_increase_if_contractivity_below = 0.,
 		   order_decrease_if_contractivity_above = 0., order_decrease_only_if_step_size_ratio_above = 0.,
 		   order_decrease_only_if_step_size_ratio_below = 0.;
-	int order = 13., min_order = 0, max_order = 0;
+	int order = 17, min_order = 0, max_order = 0;
 	unsigned int max_steps = 10000, newton_max_steps = 0, dae_index_1_count = 0, dae_index_2_count = 0,
 				 dae_index_3_count = 0;
 
@@ -258,13 +258,14 @@ static PyObject *radau(PyObject *self, PyObject *args, PyObject *kwargs) {
 		PyErr_SetString(PyExc_ValueError, "dense_callback, if set, must be callable");
 		return NULL;
 	}
-	if(order != 13 && order != 5 && order != 9) {
-		PyErr_SetString(PyExc_ValueError, "For the first step, only orders 13, 9 and 5 are implemented.");
+	// TODO: Enable start with 17th order
+	if(order != 17 && order != 13 && order != 9 && order != 5) {
+		PyErr_SetString(PyExc_ValueError, "For the first step, only orders 17, 13, 9 and 5 are implemented.");
 		return NULL;
 	}
-	if((min_order != 0 && min_order != 1 && min_order != 5 && min_order != 9 && min_order != 13) ||
-		(max_order != 0 && max_order != 1 && max_order != 5 && max_order != 9 && max_order != 13)) {
-		PyErr_SetString(PyExc_ValueError, "Only orders 13, 9, 5 and 1 are implemented.");
+	if((min_order != 0 && min_order != 1 && min_order != 5 && min_order != 9 && min_order != 13 && min_order != 17) ||
+		(max_order != 0 && max_order != 1 && max_order != 5 && max_order != 9 && max_order != 13 && max_order != 17)) {
+		PyErr_SetString(PyExc_ValueError, "Only orders 17, 13, 9, 5 and 1 are implemented.");
 		return NULL;
 	}
 	if(!PyCallable_Check(rhs_fn)) {
@@ -318,8 +319,10 @@ static PyObject *radau(PyObject *self, PyObject *args, PyObject *kwargs) {
 	int n = PyArray_SIZE(y0_array);
 	PyArrayObject *y_out = (PyArrayObject *)PyArray_Copy(y0_array); // PyArray_FromArray(y0_array, PyArray_DESCR(y0_array), NPY_ARRAY_WRITEABLE | NPY_ARRAY_ENSURECOPY);
 	struct radau_options options = { dense_callback, rhs_fn, jacobian_fn, mass_matrix_array, y_out };
-	int lwork  = n * ((mass_matrix ? n : 0) + n + 7*n + 3*7 + 3) + 20;
-	int liwork = (2 + (7 - 1) / 2) * n + 20;
+	// int lwork  = n * ((mass_matrix ? n : 0) + n + 7*n + 3*7 + 3) + 20;
+	// int liwork = (2 + (7 - 1) / 2) * n + 20;
+	int lwork  = n * ((mass_matrix ? n : 0) + n + 9*n + 3*9 + 3) + 20;
+	int liwork = (2 + (9 - 1) / 2) * n + 20;
 	double *work = malloc(lwork * sizeof(double));
 	int *iwork = malloc(lwork * sizeof(int));
 	int no[] = { 0, 0, 0, 0 };
@@ -392,8 +395,10 @@ static PyObject *radau(PyObject *self, PyObject *args, PyObject *kwargs) {
 			radau_dense_feedback,              // Dense output function
 			dense_callback ? &yes : &no[3],    // Wether to call the dense output function
 			&work[0],                          // Temporary array of size LWORK
+			// TODO:
 			&lwork,                            // N*(LJAC+LMAS+7*N+3*NSMAX+3)+20
 			&iwork[0],                         // Temporary array of size LIWORK
+			// TODO:
 			&liwork,                           // (2+(NSMAX-1)/2)*N+20
 			NULL,                              // User-supplied RHS arguments
 			(int*)&options,                    // See RPAR
