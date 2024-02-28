@@ -54,10 +54,11 @@ if __name__ == "__main__":
     t1 = 1e7
     num = 100
     t = np.logspace(-5, 7, num=num)
-    max_steps = int(1e6)
+    max_steps = int(1e4)
+    # max_steps = int(1e6)
     # min_order = 5
     # max_order = 13
-    min_order = 17
+    min_order = 5
     max_order = 17
     reltol = 1e-14
     abstol = 1e-14
@@ -87,9 +88,9 @@ if __name__ == "__main__":
     )
     y = np.array(y).T
 
-    print(f"y.shape: {y.shape}")
+    # print(f"y.shape: {y.shape}")
 
-    exit()
+    # exit()
 
     # t = np.array(sol_t)
     h = np.array(sol_h)
@@ -98,8 +99,8 @@ if __name__ == "__main__":
     # visualization
     fig, ax = plt.subplots(2, 1)
 
-    print(f"t: {t}")
-    print(f"y:\n{y}")
+    # print(f"t: {t}")
+    # print(f"y:\n{y}")
 
     ax[0].plot(t, y[0], "-b", label="y1")
     ax[0].plot(t, y[1] * 1e4, "-r", label="y2")

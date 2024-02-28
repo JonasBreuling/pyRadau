@@ -258,7 +258,6 @@ static PyObject *radau(PyObject *self, PyObject *args, PyObject *kwargs) {
 		PyErr_SetString(PyExc_ValueError, "dense_callback, if set, must be callable");
 		return NULL;
 	}
-	// TODO: Enable start with 17th order
 	if(order != 17 && order != 13 && order != 9 && order != 5) {
 		PyErr_SetString(PyExc_ValueError, "For the first step, only orders 17, 13, 9 and 5 are implemented.");
 		return NULL;

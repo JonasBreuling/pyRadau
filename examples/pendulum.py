@@ -105,8 +105,11 @@ if __name__ == "__main__":
     # max_order = 5
     # min_order = 5
     # max_order = 13
+    # initial_order = 9
+    initial_order = 17
     min_order = 1
-    max_order = 13
+    # max_order = 13
+    max_order = 17
     # max_order = 1
     # min_order = 1
     # max_order = 5
@@ -115,8 +118,8 @@ if __name__ == "__main__":
     # max_order = 9
     # min_order = 13
     # max_order = 13
-    reltol = 1e-8
-    abstol = 1e-8
+    reltol = 1e-6
+    abstol = 1e-6
 
     y = radau(
         rhs_fn=fun,
@@ -124,6 +127,7 @@ if __name__ == "__main__":
         t0=t0,
         t=t,
         h0=h0,
+        initial_order=initial_order,
         min_order=min_order,
         max_order=max_order,
         max_steps=max_steps,
@@ -145,8 +149,8 @@ if __name__ == "__main__":
     # visualization
     fig, ax = plt.subplots(3, 1)
 
-    print(f"t: {t}")
-    print(f"y:\n{y}")
+    # print(f"t: {t}")
+    # print(f"y:\n{y}")
 
     ax[0].plot(t, y[0], "-b", label="x")
     ax[0].plot(t, y[1], "-r", label="y")
